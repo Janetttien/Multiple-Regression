@@ -1,0 +1,468 @@
+---
+title: 'Business Statistics End of Term Assessment IB94X0 2023-2024 #1'
+author: '2236681'
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, message=FALSE}
+library(tidyverse)
+library(gridExtra) # for grid.arrange()
+library(emmeans) # for emmeans() and pairs()
+library(car) # for vif()
+library(Hmisc) # for correlation functions
+library(kableExtra) # for formatting
+options(width=100)
+options(tibble.print_max = Inf)
+```
+
+---
+
+*Academic Integrity Statement*
+
+This is to certify that the work I am submitting is my own. All external references and sources are clearly acknowledged and identified within the contents. I am aware of the University of Warwick regulation concerning plagiarism and collusion.
+
+No substantial part(s) of the work submitted here has also been submitted by me in other assessments for accredited courses of study, and I acknowledge that if this has been done an appropriate reduction in the mark I might otherwise have received will be made.
+
+---
+
+# Question 1
+
+*We are interested in the effect upon bike hire usage as a result of three elements of the COVID response: Work From Home, Rule of 6 Indoors, and the Eat Out to Help Out scheme.*
+
+```{r}
+# First read in the data
+bikes <- read_csv("London_COVID_bikes.csv")
+# Check data structure and summary
+str(bikes)
+summary(bikes)
+```
+
+# 1.Data integrity checks and data preparation
+
+```{r}
+# Visualize the number of bike hires with histogram plot
+ggplot(bikes, aes(x=Hires)) + geom_histogram(binwidth=1000) + labs(x="Number of Bike Hires", y="Frequency")
+
+# Remove the data with 0 Hires
+bikes %>% filter(Hires == 0)
+bikes <- bikes %>% filter(!Hires == 0)
+
+# Check the items with the numbre of bike hires over 60000
+bikes %>% filter(Hires > 60000)
+
+# Check if any duplicated data and remove
+bikes %>% group_by(date) %>% filter(n()>1)
+bikes <- bikes %>% group_by(date) %>% filter(!(n()>1 & wfh==0))
+```
+
+Based on the histogram, we can see that the number of bike hires is basically continuous and centred among the number between 10,000 and 40,000. 
+
+However, there are two data on the date of 2022-09-10 and 2022-09-11 found the number of Hires are zero. After searching the source of data (Transport for London, 2023), the scheme shutdown for a full weekend to upgrade the back office system and prepare for e-bikes on those two days. Therefore, there is no data available. Since this wouldn’t be useful for predicting or understanding hires outside of a shutdown, we should probably exclude those days from the analysis. 
+
+Moreover, it is noticeable to discover that there are several dates have the number of bike hires more than 60,000, exceeding the normal range. After filtering out the data, those data all happened in summer season, May to August, the popular season for riding bikes. Therefore, they are assumed as non error data and there is no significant outliers in the provided dataset.
+
+Bsides, there are two data on the same date of 2021-12-13 found and after checking the dataset, the categorical results of wfh variable are different. After searching the news announced by UK government (Prime Minister's Office, 2021), the work from home policy is advised; therefore, the variable of wfh for this date shall remain the option of 1 and exclude the option of 0.
+
+```{r}
+# Transfer data frame of "year", "month" and "day"  to factor and make them in order
+bikes <- bikes %>% mutate(year=as.factor(year))
+bikes <- bikes %>% mutate(day=factor(day, levels=c("Mon","Tue", "Wed", "Thu", "Fri", "Sat", "Sun")))
+bikes <- bikes %>% mutate(month=factor(month, levels=c("Jan","Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")))
+```
+
+```{r}
+# Transfer binary column with levels and set "NO"(no policy) as baseline
+bikes <- bikes %>% mutate(wfh=factor(wfh, levels=c("0", "1"), labels=c("No","Yes")))
+bikes <- bikes %>% mutate(rule_of_6_indoors=factor(rule_of_6_indoors, levels=c("0", "1"), labels=c("No","Yes")))
+bikes <- bikes %>% mutate(eat_out_to_help_out=factor(eat_out_to_help_out, levels=c("0", "1"), labels=c("No","Yes")))
+```
+
+# 2.Regression analyses to examine the effect of three policy upon the number of bike rentals
+
+```{r}
+# Create simple regression of wfh
+m.wfh <- lm(Hires ~ wfh, data = bikes)
+anova(m.wfh)
+```
+
+The policy of work from home has a significant effect on the number of bike rents. The bike hires differ significantly with work from home policy or not, F(1,4807)=29.99, p<.001.
+
+```{r}
+# Create simple regression of rule_of_6_indoors
+m.rule_of_6_indoors <- lm(Hires ~ rule_of_6_indoors, data = bikes)
+anova(m.rule_of_6_indoors)
+```
+
+The policy of rule of six indoors has a significant effect on the number of bike rents. The bike hires differ significantly with rule of six indoors policy or not, F(1,4807)=88.31, p<.001.
+
+```{r}
+# Create simple regression of eat_out_to_help_out
+m.eat_out_to_help_out <- lm(Hires ~ eat_out_to_help_out, data = bikes)
+anova(m.eat_out_to_help_out)
+```
+
+The policy of eat out to help out has a significant effect on the number of bike rents. The bike hires differ significantly with eat out to help out policy or not, F(1,4807)=29.01, p<.001.
+
+```{r}
+# Use multiple regression to simultaneously estimate the effect of three elements
+m.wfh.rule.eat <- lm(Hires ~ wfh + rule_of_6_indoors + eat_out_to_help_out, data = bikes)
+summary(m.wfh.rule.eat)
+cbind(coef(m.wfh.rule.eat), confint(m.wfh.rule.eat))
+```
+
+*Multiple regression shows that:*
+
+1) There is a significant positive effect of work from home policy upon the number of bike hires (t(4805)=3.64, p<.001), having a work from home policy increase the number of bike hires by an average of 1231.5 (CI = [567.61, 1895.41]). 
+
+2) There is also a significant positive effect of rule of six indoors upon the number of bike hires (t(4805)=8.38, p<.001), having a rule of six indoors policy increase the number of bike hires by an average of 8492.9 (CI = [6505.95, 10479.78]).
+
+3) There is also a significant positive effect of eat out to help out upon the number of bike hires (t(4805)=5.69, p<.001), having a eat out to help out policy increase the number of bike hires by an average of 10308.9 (CI = [6755.28, 13862.53]).
+
+```{r}
+# Run the VIF score for checking multicollinearity in the complex model
+vif(m.wfh.rule.eat)
+```
+
+Then we also check the VIF scores to confirm if there is multicollinearity condition in the complex model. The VIF scores for those three policy are low, therefore, we don't need to worry about the multicollinearity in this model.
+
+```{r}
+# Calculate the emmeans of three policy multiple regression model
+m.wfh.rule.eat.emm <- emmeans(m.wfh.rule.eat, ~wfh+rule_of_6_indoors+eat_out_to_help_out)
+
+# Formatting the emmeans table
+m.wfh.rule.eat.emm.df <- as.data.frame(m.wfh.rule.eat.emm)
+names(m.wfh.rule.eat.emm.df) <- c("WFH", "Rule of 6 Indoors", "Eat Out to Help Out", "Emmean", "SE", "DF", "Lower.CL", "Upper.CL")
+( Table.1 <- m.wfh.rule.eat.emm.df %>% kbl(digits = 2, caption = "Table.1 Summary of Emmeans and Related Statistical Values of Three Policy Multiple Regression Model") %>% kable_styling(font_size = 12) )
+```
+
+*The implications for the positive effect of the above three policy:*
+
+Firstly, we originally expected that work from home policy would be associated with lower number of bike hires. However, it has a positive effect. Based on the summary table above, we can clearly see that the emmeans of number of bike hires are comparatively bigger when the work from home policy was performed. We assumed that, during the Covid-19 pandemic, people were instructed to work from home where possible. For the purposes of daily exercise, cycling was thought of a suitable and acceptable activity for leisure, making work from home have a significant positive effect to the number of bike hires.
+
+Secondly, rule of six indoors limited the indoor activity during Covid-19 outbreak; therefore, cycling, an outdoor activity, became a popular leisure event for the citizens choosing. Moreover, it is probably that the pandemic condition became worse and people tend to use bikes as transportation tool rather than taking public transportation when this policy announced. According to the summary table, we can also easily find out that the predicted emmeans of number of bike hires were bigger when this policy was under yes situation.
+
+Lastly, eat out to help out policy encouraged local people to have meal in restaurants with offering discount; as a result, it is reasonable that the demand for using safer transportation tool, such as cycling, increased during that period, leading to a positive effect to the number of bike rent. Similarly, through checking the summary table, the estimated emmeans of number of bike hires were bigger when this policy was under yes situation.
+
+```{r}
+# Use multiple regression to simultaneously estimate the effect of three elements with an interaction term
+m.wfh.rule.eat.intr <- lm(Hires ~ wfh * rule_of_6_indoors * eat_out_to_help_out, data = bikes)
+summary(m.wfh.rule.eat.intr)
+cbind(coef(m.wfh.rule.eat.intr), confint(m.wfh.rule.eat.intr))
+```
+
+*Multiple regression with interaction shows that:*
+
+1) There is significant positive effect of work from home (b=1313.0, CI = [646.37, 1979.61], t(4804)=3.86, p<.001).
+
+2) There is significant positive effect of rule of_6 indoors (b=16544.4, CI = [9917.72, 23171.15], t(4804)=4.9, p<.001). 
+
+3) There is significant positive effect of eat out to help out (b=10326.4, CI = [6774.65, 13878.08], t(4804)=5.70, p<.001). 
+
+4) However, there is a significant negative interaction of work from home and eat out to help out (b =-8846.0, CI = [-15791.9, -1900.04], t(4804)=-2.5, p=.01).
+
+Moreover, we have some combinations where we don't have enough data of that type to estimate, therefore, we don't have sufficient data to apply this interaction model.
+
+# 3.Controlling the effect of differences between different years, months, and days of the week
+
+```{r}
+# Create multiple regression with year
+m.wfh.rule.eat.year <- lm(Hires ~ wfh + rule_of_6_indoors + eat_out_to_help_out + year, data = bikes)
+anova(m.wfh.rule.eat.year)
+summary(m.wfh.rule.eat.year)
+```
+
+Through ANOVA, we can see that year has a significant effect on the number of bike rents, The bike hires differ significantly across years, F(13,4792)=72.79, p<.001. 
+
+```{r}
+# Run the VIF score for checking multicollinearity in the complex model
+vif(m.wfh.rule.eat.year)
+```
+
+It is found out that work from home and year have high VIF scores, meaning that a potential multicollinearity existing. But there is an exception to this is when the multicollinearity is only found in control variables. Since we are not interested in interpreting the beta coefficients of control variable, which is year, we don’t need to worry about which ones specifically are explaining the variance they are there to control for. That is to say, we included year is to ensure that our model can more accurately predict the relationship between the three policy variables and the number of bike hires. Therefore, the multicollinearity doesn't invalidate our model.
+
+```{r}
+# Create multiple regression with month
+m.wfh.rule.eat.month <- lm(Hires ~ wfh + rule_of_6_indoors + eat_out_to_help_out + month, data = bikes)
+anova(m.wfh.rule.eat.month)
+summary(m.wfh.rule.eat.month)
+```
+
+Through ANOVA, we can see that month has a significant effect on the number of bike rents. The bike hires differ significantly across months, F(11,4794)=229.078, p<.001.
+
+```{r}
+# Run the VIF score for checking multicollinearity in the complex model
+vif(m.wfh.rule.eat.month)
+```
+
+Then we also check the VIF scores to confirm if there is multicollinearity condition in the complex model. The VIF scores for those three policy and month are low, therefore, we don't need to worry about the multicollinearity in this model.
+
+```{r}
+m.wfh.rule.eat.day <- lm(Hires ~ wfh + rule_of_6_indoors + eat_out_to_help_out + day, data = bikes)
+anova(m.wfh.rule.eat.day)
+summary(m.wfh.rule.eat.day)
+```
+
+Through ANOVA, we can see that day has a significant effect on the number of bike rents. The bike hires differ significantly across days of the week, F(6,4799)=41.229, p<.001.
+
+```{r}
+vif(m.wfh.rule.eat.day)
+```
+
+Then we also check the VIF scores to confirm if there is multicollinearity condition in the complex model. The VIF scores for those three policy and day are low, therefore, we don't need to worry about the multicollinearity in this model.
+
+After checking the ANOVA effect of each time factor with the three policy, we can know that those time factors have significant effect on our predictions. Then we draw out the plots to spot their distribution, and use jitter and alpha blending to separate out the points to help show all of the days clearly. It also helps us spot outliers more robustly.
+
+```{r}
+# Calculate the emmeans of year's simple regression model
+m.year <- lm(Hires ~ year, data = bikes)
+m.year.emm <- emmeans(m.year, ~year)
+
+# Plot out the distribution of year with emmeans and confidence interval
+( plot.m.year.emm <- ggplot(summary(m.year.emm), aes(x=year, y=emmean, ymin=lower.CL, ymax=upper.CL)) + geom_jitter(data=bikes, mapping=aes(x=year, y=Hires, ymin=NULL, ymax=NULL), alpha=0.5, height=0, width=0.2) + geom_point(col="magenta") + geom_linerange(col="magenta") + labs(x="Year", y="Number of Bike Hires", subtitle="Each dot is one day. Error bars are 95% CIs of the mean") + ggtitle("Figure.1 Distribution of Bike Hires By Year (2011-2023)"))
+```
+
+Firstly, through the distribution of year, we can observe that the number of bike hires stay at the approximate scale from 2014 to 2019. However, it shows us that starting from 2020 there were lots of days recorded the number of hires outside of median. Assuming that Covid-19 pandemic period has affected citizens' willingness to riding bikes so as to reduce the opportunities of contacting people through using public transportation during that period.
+
+```{r}
+# Calculate the emmeans of month's simple regression model
+m.month <- lm(Hires ~ month, data = bikes)
+m.month.emm <- emmeans(m.month, ~month)
+
+# Plot out the distribution of month with emmeans and confidence interval
+( plot.m.month.emm <- ggplot(summary(m.month.emm), aes(x=month, y=emmean, ymin=lower.CL, ymax=upper.CL)) + geom_jitter(data=bikes, mapping=aes(x=month, y=Hires, ymin=NULL, ymax=NULL), alpha=0.5, height=0, width=0.2) + geom_point(col="magenta") + geom_linerange(col="magenta") + labs(x="Month", y="Number of Bike Hires", subtitle="Each dot is one day. Error bars are 95% CIs of the mean") + ggtitle("Figure.2 Distribution of Bike Hires By Month (2011-2023)"))
+```
+
+Secondly, through the distribution of month, it is easily to discover that the number of bike hires shows an upward convex shape, a stably increasing trend since May to September, assuming this trend is due to better weather condition in UK. Moreover, we can also notice that there are a lot of outliers in May to September, predicting that they might be related to the Covid-19 pandemic policy announced during that period.
+
+```{r}
+# Calculate the emmeans of day's simple regression model
+m.day <- lm(Hires ~ day, data = bikes)
+m.day.emm <- emmeans(m.day, ~day)
+
+# Plot out the distribution of day with emmeans and confidence interval
+( plot.m.day.emm <- ggplot(summary(m.day.emm), aes(x=day, y=emmean, ymin=lower.CL, ymax=upper.CL)) + geom_jitter(data=bikes, mapping=aes(x=day, y=Hires, ymin=NULL, ymax=NULL), alpha=0.5, height=0, width=0.2) + geom_point(col="magenta") + geom_linerange(col="magenta") + labs(x="Day", y="Number of Bike Hires", subtitle="Each dot is one day. Error bars are 95% CIs of the mean") + ggtitle("Figure.3 Distribution of Bike Hires By Day (2011-2023)") )
+```
+
+Lastly, through the distribution of days in a week, we can also notice that Weekdays relatively have higher number of hires compared to Weekends, but Weekends have more outliers, assuming that people would use bikes as transportation tool or main leisure activity in the weekends during Covid-19 pandemic period.
+
+```{r}
+# Use multiple regression to simultaneously estimate the effect of three policy with year, month and day
+m.wfh.rule.eat.three.time <- lm(Hires ~ wfh + rule_of_6_indoors + eat_out_to_help_out + year + month + day, data = bikes)
+summary(m.wfh.rule.eat.three.time)
+cbind(coef(m.wfh.rule.eat.three.time), confint(m.wfh.rule.eat.three.time))
+
+# Run the VIF score for checking multicollinearity in the complex model
+vif(m.wfh.rule.eat.three.time)
+
+# Run ANOVA to compare the model considering time factors
+anova(m.wfh.rule.eat, m.wfh.rule.eat.three.time)
+```
+
+*Multiple regression shows that:*
+
+1) There is a significant negative effect of work from home policy upon the number of bike hires (t(4775)=-10.27, p<.001), having a work from home policy decrease the number of bike hires by an average of -5451.6 (CI = [-6492.70, -4410.59]). 
+
+2) There is also a significant positive effect of rule of six indoors upon the number of bike hires (t(4775)=3.87, p<.001), having a rule of six indoors policy increase the number of bike hires by an average of 2835.1 (CI = [6505.95, 10479.78]).
+
+3) There is no significant effect of rule of eat out to help out upon the number of bike hires (t(4775)=-0.482, p=.63), having a rule of six indoors policy decrease the number of bike hires by an average of -639.6 (CI = [-3241.22, 1961.93]).
+
+Still, we found out that work from home and year have high VIF scores, meaning that a potential multicollinearity existing. But since we included year is to ensure that our model can more accurately predict the relationship between the three policy variables and the number of bike hires. Therefore, the multicollinearity doesn't invalidate our model.
+
+```{r}
+# Plot out the visualisation figure by years
+m.wfh.year.emm.df <- emmeans(m.wfh.rule.eat.three.time, ~wfh+year)
+m.wfh.year.emm.df<- m.wfh.year.emm.df %>% as.data.frame() %>% filter(year %in% c(2020,2021,2022,2023))
+
+m.rule.year.emm.df <- emmeans(m.wfh.rule.eat.three.time, ~rule_of_6_indoors+year)
+m.rule.year.emm.df<- m.rule.year.emm.df %>% as.data.frame() %>% filter(year %in% c(2020,2021,2022,2023))
+
+grid.arrange(ggplot(m.wfh.year.emm.df, aes(x=year, y=emmean, ymin=lower.CL, ymax=upper.CL, col=wfh)) + geom_point() + geom_linerange(alpha=0.5) + labs(x="Year", y="Number of Bike Hires", col="WFH", subtitle="Error bars are 95% CIs") + ylim(10000,45000) ,ggplot(m.rule.year.emm.df, aes(x=year, y=emmean, ymin=lower.CL, ymax=upper.CL, col=rule_of_6_indoors)) + geom_point() + geom_linerange(alpha=0.5) + labs(x="Year", y="Number of Bike Hires", col="Rule of Six Indoors", subtitle="Error bars are 95% CIs")+ ylim(10000,45000),widths=c(4,5), top = "Figure.4 Comparison of Bike Hires Controlling time Between 2020 And 2023")
+```
+
+```{r}
+# Plot out the visualisation figure by months
+m.wfh.month.emm.df <- emmeans(m.wfh.rule.eat.three.time, ~wfh+month)
+m.wfh.month.emm.df<- m.wfh.month.emm.df %>% as.data.frame() %>% filter(month %in% c("May", "Jun", "Jul", "Aug", "Sep"))
+
+m.rule.month.emm.df <- emmeans(m.wfh.rule.eat.three.time, ~rule_of_6_indoors+month)
+m.rule.month.emm.df<- m.rule.month.emm.df %>% as.data.frame() %>% filter(month %in% c("May", "Jun", "Jul", "Aug", "Sep"))
+
+grid.arrange(ggplot(m.wfh.month.emm.df, aes(x=month, y=emmean, ymin=lower.CL, ymax=upper.CL, col=wfh)) + geom_point() + geom_linerange(alpha=0.5) + labs(x="Month", y="Number of Bike Hires", col="WFH", subtitle="Error bars are 95% CIs") + ylim(10000,45000) ,ggplot(m.rule.month.emm.df, aes(x=month, y=emmean, ymin=lower.CL, ymax=upper.CL, col=rule_of_6_indoors)) + geom_point() + geom_linerange(alpha=0.5) + labs(x="Month", y="Number of Bike Hires", col="Rule of Six Indoors", subtitle="Error bars are 95% CIs")+ ylim(10000,45000),widths=c(4,5), top = "Figure.5 Comparison of Bike Hires Controlling Time Between May And Sep")
+```
+
+```{r}
+# Plot out the visualisation figure by days
+m.wfh.day.emm.df <- emmeans(m.wfh.rule.eat.three.time, ~wfh+day)
+m.wfh.day.emm.df<- m.wfh.day.emm.df %>% as.data.frame()
+
+m.rule.day.emm.df <- emmeans(m.wfh.rule.eat.three.time, ~rule_of_6_indoors+day)
+m.rule.day.emm.df<- m.rule.day.emm.df %>% as.data.frame()
+
+grid.arrange(ggplot(m.wfh.day.emm.df, aes(x=day, y=emmean, ymin=lower.CL, ymax=upper.CL, col=wfh)) + geom_point() + geom_linerange(alpha=0.5) + labs(x="Day", y="Number of Bike Hires", col="WFH", subtitle="Error bars are 95% CIs") + ylim(10000,45000) ,ggplot(m.rule.day.emm.df, aes(x=day, y=emmean, ymin=lower.CL, ymax=upper.CL, col=rule_of_6_indoors)) + geom_point() + geom_linerange(alpha=0.5) + labs(x="Day", y="Number of Bike Hires", col="Rule of Six Indoors", subtitle="Error bars are 95% CIs")+ ylim(10000,45000),widths=c(4,5), top = "Figure.6 Comparison of Bike Hires Controlling Time In A Week")
+```
+
+*The implications for the results of the above two policy controlling time factors with significant effects:*
+Since the three policy were implemented during the Covid-19 pandemic period, we selected the year from 2020 to 2023 as our main analyzed targets. On top of that, after searching the timeline announced by UK government (Institute for Government, 2023), we can know that work from home, Eat Out to Help Out and Rule of six indoor schemes were announced in May, August and September individually. Therefore, we chose that period of months as the main analysed targets as well.
+
+Adding time factors into the model make the effect of work from home policy become significantly negative to the number of bike hires, which is a more reasonable result to this policy. Because during the work from home policy announced period, we can hypothesize that it was under a more risky or severe pandemic situation and people would like to reduce the chances going out, not to mention hiring bikes. The reason why the previous model have a positive effect may due to the lack of sufficient data, such as time factors, so this effect was hidden behind.
+
+For the rule of six policy, it still remains a significantly positive effect to the number of bike hires. But the prediction with time factor becomes more precise. Before considering the time factors, we can merely know that under this policy the number of bike hires can increase 36418.4. 
+But after adding the time factors, we can know the effect of this policy to bike hires with more accurate timing, such as in which year, in which month and on which day of the week. For example, we can predict the estimated number of bike hires with rule of six policy on Thursday, August in 2020 by adding the intercept 5552.4 with 17716.6, 13434.7 and 2292.8, computing the outcome of 38996.5.
+
+To sum up, adding time factors to the model significantly improves the fit F(30,4775)=207.48,p<.0001. The adjusted R-squared becomes better from 0.03 to 0.57, meaning that those three policy with time variables explain the variability of number of bike hires well. This model has better fit and its explanatory power improves.
+
+After exploring the data, we found it is appropriate to control for the effect of potential differences between different years, months, and days of the week. Because when considering those time factors, the fit of model significantly improves and makes the prediction more accurate.
+
+---
+
+# Question 2
+
+```{r}
+# First read in the data
+books <- read_csv("publisher_sales.csv")
+# Run the structure of dataset
+str(books)
+# Check the summary of dataset
+summary(books)
+```
+
+# 1.Data integrity checks and data preparation
+
+```{r}
+# Visualize the number of book sales with histogram plot
+ggplot(books, aes(x=daily.sales)) + geom_histogram(binwidth=1) + labs(x="Number of Book Sales / Daily", y="Frequency")
+# Check the items with the number of daily sales equals to zero and less than zero
+books %>% filter(daily.sales == 0)
+books %>% filter(daily.sales < 0)
+```
+
+Based on the histogram, we can see that the number of daily sales is basically continuous. It is clear to discover that there is one data has minus number of sales. But since daily sales is the average number of sales (minus refunds) across all days in the period, negative number at this case in reasonable. Therefore, it is assumed as non error data and there is no significant outliers in the provided dataset.
+
+```{r}
+# Rename the category of "genre" into more detailed name 
+books <- books %>% mutate(genre=factor(genre, levels=c("adult_fiction", "non_fiction", "YA_fiction"), labels=c("Adult_fiction", "Non_fiction", "Young_Adult_fiction")))
+```
+
+# 2.Examine the effect of average review scores and total number of reviews upon the number of book sales
+
+```{r}
+# Plot out the correlation between the number of books sales and average review and total reviews
+grid.arrange(ggplot(books, aes(y=daily.sales, x=avg.review)) + geom_point(alpha=0.5) + geom_smooth(method = lm) + labs(x="Avg. Review", y="Number of Book Sales / Daily"), ggplot(books, aes(y=daily.sales, x=total.reviews)) + geom_point(alpha=0.5) + geom_smooth(method = lm) + labs(x="Total Reviews", y="Number of Book Sales / Daily"))
+```
+
+Through the distribution plot of average review and total reviews, it seems like average review has little or no linear correlation to the number of book sales because of the horizontal correlation line. That is to say, higher review scores do not correlate to higher sales. Also, we have noticed that the average review results mainly locate at between 3.5 to 5 scores, which are higher scores. We can assume that maybe people tend to leave good review instead of bad review so this factor has less correlation to book sales. However, we can clearly to notice that the total reviews have positive correlation to book sales. Indeed, if there are more book sales, meaning there are more buyers and more people would leave reviews.
+
+```{r}
+# Use multiple regression to simultaneously estimate the effect of both average review score and total review score
+m.avg.total.review <- lm(daily.sales ~ avg.review + total.reviews, data = books)
+summary(m.avg.total.review)
+cbind(coef(m.avg.total.review), confint(m.avg.total.review))
+```
+
+This shows that the effect of both average review and total reviews in the same regression we find that when controlling for aother variable, one score increase in average review predicts 4.31 decrease daily sales (t(5997) = -8.36, p<.001, 95% CI [-5.32, -3.3]) and one score increase in total reviews predicts a increase in daily sales of 0.53 (t(5997) = 68.84, p<.001, 95% CI [0.52, 0.55]). 
+
+```{r}
+# Run the VIF score for checking multicollinearity in the complex model
+vif(m.avg.total.review)
+```
+
+Then we also check the VIF scores to confirm if there is multicollinearity condition in the complex model. The VIF scores for those two variables are low, therefore, we don't need to worry about the multicollinearity in this model.
+
+```{r}
+# Use multiple regression including an interaction
+m.avg.total.review.intr <- lm(daily.sales ~ avg.review * total.reviews, data = books)
+summary(m.avg.total.review.intr)
+cbind(coef(m.avg.total.review.intr), confint(m.avg.total.review.intr))
+```
+
+The results show that there are significant main effect of avg.review (b=14.67, CI = [-16.62, -12.73], t(5996)=-14.80, p<.001) and total.reviews (b=0.14, CI = [0.07,  0.2], t(5996)=4.21, p<.001). Moreover, there is a significant positive interaction (b = 0.1, CI = [0.08, 0.11], t(5996)=12.18, p<.001).
+
+```{r}
+# Run the VIF score for checking multicollinearity in the complex model
+vif(m.avg.total.review.intr, type = 'predictor')
+```
+
+Still, we also check the VIF scores to confirm if there is multicollinearity condition in the complex model. The VIF scores for those two variables are low, therefore, we don't need to worry about the multicollinearity in this model.
+
+```{r}
+# Use ANOVA to compare the models with and without interaction
+anova(m.avg.total.review, m.avg.total.review.intr)
+```
+
+A model comparison test shows that the overall model fit is significantly improved (F(1,5996) = 148.45, p<.001). Both of Multiple R-squared and Adjusted R-square are improved in the more complex model, the former one improved from 0.44 to 0.46 and the latter one improved from 0.44 to 0.45. Therefore, adding interaction to the model significantly improves the fit, meaning that the model with interaction explains the variability of number of book sales better. This model has better explanatory power and makes the prediction more accurate.
+
+```{r}
+sale.preds <- tibble(avg.review = rep(c(0, 2.5, 5), 3), total.reviews = c(rep(150, 3), rep(200, 3), rep(250, 3)))
+
+sale.preds <- mutate(sale.preds, sale.hat = predict(m.avg.total.review.intr, sale.preds))
+
+grid.arrange(ggplot(sale.preds) + geom_line(aes(x = avg.review, y = sale.hat, colour = as.factor(total.reviews))) + labs(colour = "Total Reviews") + ylab("Predicted Book Sale") +  xlab("Avg. Reviews"), ggplot(sale.preds) + geom_line(aes(x = total.reviews, y = sale.hat, colour = as.factor(avg.review))) + labs(colour = "Avg. Review") + ylab("Predicted Book Sale") + xlab("Total Reviews"), ncol = 2, top = "Figure.7 Interaction Effect of Avg. Review and Total Reviews")
+```
+
+Based on the plot above, this shows us that those with low average review gain little from additional numbers of total reviews, but those with higher average review gain a lot from additional numbers of total reviews. In conclusion, books have more sales depending upon their average review scores and total number of reviews.
+
+# 3.Examine the effect of sale price upon the number of book sales
+
+```{r}
+# Plot out the correlation between the number of books sales and sale price
+ggplot(books, aes(y=daily.sales, x=sale.price)) + geom_point(alpha=0.5) + geom_smooth(method = lm) + labs(x="Sale Price", y="Number of Book Sales / Daily")
+```
+
+Firstly, we plot out the correlation between the number of book sales and sale price. Through the plot, it is obvious to notice the there is a negative effect of sale price upon the number of sales. The higher the sale price is, the lower the number of daily sales has. Moreover, we can also notice that sale price specifically locates at two price levels, one is around 7.5 and the other is around 15.
+
+```{r}
+# Use simple regression to estimate the effect of sale price
+m.by.sale.price <- lm(daily.sales ~ sale.price, data = books)
+summary(m.by.sale.price)
+cbind(coef(m.by.sale.price), confint(m.by.sale.price))
+```
+
+There is a significant negative effect of sale price upon the number of sales (t(5998)=-45.68, p<.001), with every 1 unit increase in sale price predicting an average decrease of 3.98 on the number of sales (CI = [-4.15, -3.81]). This assumes as a reasonable prediction that the price would have a negative impact to the purchasing demand. The higher the book price is, the lower the number of book sales has.
+
+# 4.Examine the effect of sale price upon the number of book sales across genres
+
+```{r}
+# Use multiple regression and include an interaction lets the effect of sale price differ across genre
+m.by.price.genre.intr <- lm(daily.sales ~ sale.price * genre, data=books)
+summary(m.by.price.genre.intr)
+cbind(coef(m.by.price.genre.intr), confint(m.by.price.genre.intr))
+```
+
+The results show that daily sales are lower for Non fiction genre (b=-23.63, CI [-31.84, -15.42], t(5994)=-5.64, p<.001), higher for sale price (b=-0.71, CI [-1.2, -0.22], t(5994)=-2.85, p<.001), and positive for Young Adult fiction genre (b=52.97, CI [47.34, 58.60], t(5994)=18.44, p<.001). There is also a significant negative interaction between sale price and Young Adult fiction genre, with Young Adult fiction genre having a less positive effect for books at higher sale price (b=-2.83, CI [-3.52, -2.14], t(5994)=-8.08, p<.001), but there is no significant effect of interaction between sale price and Non fiction genre (b=0.64, CI [-0.04, 1.32], t(5994)=1.84, p=0.07).
+
+```{r}
+# Run the VIF score for checking multicollinearity in the complex model
+vif(m.by.price.genre.intr, type = 'predictor')
+```
+
+Still, we also check the VIF scores to confirm if there is multicollinearity condition in the complex model. The VIF scores for those two variables are low, therefore, we don't need to worry about the multicollinearity in this model.
+
+```{r}
+# Set up the data for sale price predictions across genres and without controlling genres
+sales.preds <- tibble(sale.price = rep(c(5, 10, 15), 3), genre = c(rep("Adult_fiction", 3), rep("Non_fiction", 3), rep("Young_Adult_fiction", 3)))
+sales.preds <- mutate(sales.preds, sales.hat = predict(m.by.price.genre.intr, sales.preds))
+sales.preds.no.control <- tibble(sale.price = rep(c(5, 10, 15)))
+sales.preds.no.control <- mutate(sales.preds.no.control, sales.hat.no.control = predict(m.by.sale.price, sales.preds.no.control))
+
+# Plot out the visualisation of effect of sale price upon the number of sales when across genres
+grid.arrange(ggplot(sales.preds.no.control) + geom_line(aes(x = sale.price, y = sales.hat.no.control)) + labs(x="Sale Price", y="Predicted Number of Book Salse / Daily") + ylim(60,150), ggplot(sales.preds) + geom_line(aes(x = sale.price, y = sales.hat, colour = as.factor(genre))) + labs(x="Sale Price", y="Predicted Number of Book Salse / Daily",colour = "Genres") + ylim(60,150),widths=c(4.4,7.2), ncol=2, top = "Figure.8 Sale Price Effect to Book Sale Controlling Genres")
+```
+
+According to the above graph, we can observe that when we merely consider the correlation between sale price and number of book sales, sale price has significantly negative effect to the number of book sales. However, when we consider the effect of sale price across the genres, it has different results. For Non fiction genre, the sale price has little or no effect to the number of book sales. For Adult fiction genre, it has a slightly negative effect to the book sales. In other words, when sale price becomes higher to this book genre, the number of book sales becomes lower. As for the Young Adult fiction genre, it has the most negative effect to the book sales among these three genres. We can clearly notice that when the sale price increase 5 units, the number of book sales decrease around 15. 
+
+In conclusion, although the sale price has significantly negative effect to the number of bbok sales, when it across the genres, the effect has come to different results to differnt genres.
+
+# References:
+
+1.Transport for London (2023). Number of Bicycle Hires. Available at: https://data.london.gov.uk/dataset/number-bicycle-hires [Accessed 13 Jan. 2024].
+
+2.Prime Minister's Office (2021). Prime Minister confirms move to plan B in England. Available at: https://www.gov.uk/government/news/prime-minister-confirms-move-to-plan-b-in-england [Accessed 13 Jan. 2024].
+
+3.Institute for Government (2023). Timeline of UK government coronavirus lockdowns and restrictions. Available at: https://www.instituteforgovernment.org.uk/data-visualisation/timeline-coronavirus-lockdowns [Accessed 13 Jan. 2024].
+
+---
